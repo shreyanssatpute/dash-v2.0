@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
     <div class="container">
@@ -20,6 +22,15 @@
                 </div>
             </div>
             <div class="header-right">
+                <div class="globe-button-header">
+                    <button id="show-map">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </button>
+                </div>
                 <div class="stats">
                     <div class="stat-item">
                         <span class="stat-value" id="total-events">0</span>
@@ -53,6 +64,7 @@
             
             <div class="events-container">
                 <div id="events-grid" class="events-grid"></div>
+                <div id="pagination-container"></div>
                 <div id="empty-state" class="empty-state">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -95,13 +107,11 @@
                         <div class="detail-label">Timestamp:</div>
                         <div id="modal-timestamp" class="detail-value"></div>
                     </div>
-                    <!-- Add divider line here -->
                     <div class="divider"></div>
                     <div class="detail-row location-container">
                         <div class="detail-label">Location:</div>
                         <div id="modal-location" class="detail-value"></div>
                     </div>
-                    <!-- Status row is hidden as it's not in the screenshot -->
                     <div class="detail-row status-container" style="display: none;">
                         <div class="detail-label">Status:</div>
                         <div id="modal-status" class="detail-value"></div>
@@ -115,10 +125,30 @@
         </div>
     </div>
     
+    <!-- Map Modal -->
+    <div id="map-modal" class="map-modal">
+        <div class="map-modal-content">
+            <div class="map-modal-header">
+                <h2>Event Locations</h2>
+                <button id="close-map" class="close-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="map-container">
+                <div id="world-map"></div>
+            </div>
+        </div>
+    </div>
+    
     <div id="notification" class="notification">
         <span id="notification-text"></span>
     </div>
     
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
