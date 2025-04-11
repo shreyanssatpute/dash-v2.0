@@ -1,459 +1,627 @@
 // Configuration
-const API_URL = "https://api.jsonbin.io/v3/b" // JSONBin.io API URL
-const API_KEY = "$2a$10$F1fId.oFBNUrtnDImC3MNOy6o1ecqmO.nP76OF2tpg57RMGEYMULe" // Your JSONBin.io API key
-const BIN_ID = "67e81ce38a456b79667f01f3" // Fixed bin ID
-const POLLING_INTERVAL = 5000 // Poll every 5 seconds
+const API_URL = "https://api.jsonbin.io/v3/b";
+const API_KEY = "$2a$10$F1fId.oFBNUrtnDImC3MNOy6o1ecqmO.nP76OF2tpg57RMGEYMULe";
+const BIN_ID = "67e81ce38a456b79667f01f3";
+const POLLING_INTERVAL = 5000;
+const EVENTS_PER_PAGE = 10;
 
 // DOM Elements
-const eventsGrid = document.getElementById("events-grid")
-const emptyState = document.getElementById("empty-state")
-const loadingIndicator = document.getElementById("loading-indicator")
-const totalEventsElement = document.getElementById("total-events")
-const todayEventsElement = document.getElementById("today-events")
-const searchInput = document.getElementById("search-input")
-const searchButton = document.getElementById("search-button")
-const filterButtons = document.querySelectorAll(".filter-button")
-const eventModal = document.getElementById("event-modal")
-const modalImage = document.getElementById("modal-image")
-const modalCamera = document.getElementById("modal-camera")
-const modalTimestamp = document.getElementById("modal-timestamp")
-const modalStatus = document.getElementById("modal-status")
-const modalLocation = document.getElementById("modal-location")
-const closeModal = document.getElementById("close-modal")
-const markReviewed = document.getElementById("mark-reviewed")
-const deleteEvent = document.getElementById("delete-event")
-const notification = document.getElementById("notification")
-const notificationText = document.getElementById("notification-text")
-const connectionStatus = document.getElementById("connection-status")
-const statusDot = document.querySelector(".status-dot")
+const eventsGrid = document.getElementById("events-grid");
+const emptyState = document.getElementById("empty-state");
+const loadingIndicator = document.getElementById("loading-indicator");
+const totalEventsElement = document.getElementById("total-events");
+const todayEventsElement = document.getElementById("today-events");
+const searchInput = document.getElementById("search-input");
+const searchButton = document.getElementById("search-button");
+const filterButtons = document.querySelectorAll(".filter-button");
+const eventModal = document.getElementById("event-modal");
+const modalImage = document.getElementById("modal-image");
+const modalCamera = document.getElementById("modal-camera");
+const modalTimestamp = document.getElementById("modal-timestamp");
+const modalStatus = document.getElementById("modal-status");
+const modalLocation = document.getElementById("modal-location");
+const closeModal = document.getElementById("close-modal");
+const markReviewed = document.getElementById("mark-reviewed");
+const deleteEvent = document.getElementById("delete-event");
+const notification = document.getElementById("notification");
+const notificationText = document.getElementById("notification-text");
+const connectionStatus = document.getElementById("connection-status");
+const statusDot = document.querySelector(".status-dot");
+const showMapButton = document.getElementById("show-map");
+const mapModal = document.getElementById("map-modal");
+const closeMapButton = document.getElementById("close-map");
 
 // State
-let events = []
-let currentFilter = "all"
-let searchQuery = ""
-let currentEventId = null
-const pollingInterval = null
+let events = [];
+let currentFilter = "all";
+let searchQuery = "";
+let currentEventId = null;
+let currentPage = 1;
+let worldMap = null;
 
-// Initialize the app
+// Init
 async function init() {
-  await validateBinId()
-  addBinIdStyles()
-  setupEventListeners()
+  await validateBinId();
+  addBinIdStyles();
+  setupEventListeners();
+  
+  // Add pagination container if it doesn't exist
+  if (!document.getElementById("pagination-container")) {
+    const paginationDiv = document.createElement("div");
+    paginationDiv.id = "pagination-container";
+    eventsGrid.parentNode.insertBefore(paginationDiv, eventsGrid.nextSibling);
+  }
 }
 
-// Validate bin ID and start polling
+// Validate Bin ID
 async function validateBinId() {
   try {
     const response = await fetch(`${API_URL}/${BIN_ID}`, {
       method: "GET",
       headers: { "X-Master-Key": API_KEY },
-    })
+    });
 
-    if (!response.ok) throw new Error("Invalid bin ID")
+    if (!response.ok) throw new Error("Invalid bin ID");
 
-    startPolling()
-    showNotification("Successfully connected to event data")
+    const data = await response.json();
+
+    // Initialize with empty array if no events exist
+    if (!data.record || !Array.isArray(data.record.events)) {
+      await fetch(`${API_URL}/${BIN_ID}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": API_KEY,
+        },
+        body: JSON.stringify({ events: [] }),
+      });
+    }
+
+    startPolling();
+    showNotification("Successfully connected to event data");
   } catch (error) {
-    console.error("Error validating bin ID:", error)
-    setConnectionStatus(false, "Invalid bin ID")
-    showNotification("Invalid bin ID. Please try again.", "error")
+    console.error("Error validating bin ID:", error);
+    setConnectionStatus(false, "Invalid bin ID");
+    showNotification("Invalid bin ID. Please try again.", "error");
   }
 }
 
-// Start polling for event updates
+// Polling
 function startPolling() {
-  loadEvents()
-  addBinIdDisplay()
-  setInterval(loadEvents, POLLING_INTERVAL)
+  loadEvents();
+  addBinIdDisplay();
+  setInterval(loadEvents, POLLING_INTERVAL);
 }
 
-// Add bin ID display to UI
 function addBinIdDisplay() {
-  const headerLeft = document.querySelector(".header-left")
+  const headerLeft = document.querySelector(".header-left");
   if (headerLeft && !document.querySelector(".bin-id-display")) {
-    const binIdDisplay = document.createElement("div")
-    binIdDisplay.className = "bin-id-display"
-    binIdDisplay.innerHTML = `<span class="bin-id-label">Bin ID:</span> <span id="bin-id-value">${BIN_ID}</span>`
-    binIdDisplay.style.marginLeft = "15px"
-    binIdDisplay.style.cursor = "pointer"
-    binIdDisplay.title = "Click to copy Bin ID"
+    const binIdDisplay = document.createElement("div");
+    binIdDisplay.className = "bin-id-display";
+    binIdDisplay.innerHTML = `<span class="bin-id-label">Bin ID:</span> <span id="bin-id-value">${BIN_ID}</span>`;
+    binIdDisplay.style.marginLeft = "15px";
+    binIdDisplay.style.cursor = "pointer";
+    binIdDisplay.title = "Click to copy Bin ID";
 
     binIdDisplay.addEventListener("click", () => {
       navigator.clipboard
         .writeText(BIN_ID)
         .then(() => showNotification("Bin ID copied to clipboard"))
-        .catch((err) => console.error("Could not copy text:", err))
-    })
+        .catch((err) => console.error("Could not copy text:", err));
+    });
 
-    headerLeft.appendChild(binIdDisplay)
+    headerLeft.appendChild(binIdDisplay);
   }
 }
 
-// Add styles for bin ID display
 function addBinIdStyles() {
-  const style = document.createElement("style")
+  const style = document.createElement("style");
   style.textContent = `
-        .bin-id-display {
-            display: inline-flex;
-            align-items: center;
-            background-color: rgba(0, 0, 0, 0.2);
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin-left: 10px;
-            transition: background-color 0.3s;
-        }
-        .bin-id-display:hover {
-            background-color: rgba(0, 0, 0, 0.4);
-        }
-        .bin-id-label {
-            margin-right: 5px;
-            font-weight: 500;
-        }
-        #bin-id-value {
-            font-family: monospace;
-        }
-    `
-  document.head.appendChild(style)
+    .bin-id-display {
+      display: inline-flex;
+      align-items: center;
+      background-color: rgba(0, 0, 0, 0.2);
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-left: 10px;
+      transition: background-color 0.3s;
+    }
+    .bin-id-display:hover {
+      background-color: rgba(0, 0, 0, 0.4);
+    }
+    .bin-id-label {
+      margin-right: 5px;
+      font-weight: 500;
+    }
+    #bin-id-value {
+      font-family: monospace;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
-// Load events from JSONBin
+// Load Events
 async function loadEvents() {
-  showLoading(true)
+  showLoading(true);
 
   try {
     const response = await fetch(`${API_URL}/${BIN_ID}`, {
       method: "GET",
       headers: { "X-Master-Key": API_KEY },
-    })
+    });
 
-    if (!response.ok) throw new Error("Failed to fetch data")
+    if (!response.ok) throw new Error("Failed to fetch data");
 
-    const data = await response.json()
-    events = data.record.events || []
-    events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    const data = await response.json();
 
-    setConnectionStatus(true)
-    updateStats()
-    filterAndRenderEvents()
+    // Ensure events is always an array, even if empty
+    events = Array.isArray(data.record?.events) ? data.record.events : [];
+
+    // Sort newest first
+    events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    setConnectionStatus(true);
+    updateStats();
+    filterAndRenderEvents();
   } catch (error) {
-    console.error("Error loading events:", error)
-    setConnectionStatus(false, "Error connecting to server")
-    showNotification("Error loading events. Please check your connection.", "error")
+    console.error("Error loading events:", error);
+    setConnectionStatus(false, "Error connecting to server");
+    showNotification("Error loading events. Please check your connection.", "error");
   } finally {
-    showLoading(false)
+    showLoading(false);
   }
 }
 
-// Update event statistics
-function updateStats() {
-  totalEventsElement.textContent = events.length
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const todayEvents = events.filter((event) => new Date(event.timestamp) >= today)
-  todayEventsElement.textContent = todayEvents.length
+// Add new event function
+async function addNewEvent(newEvent) {
+  try {
+    // Generate a unique ID if not provided
+    if (!newEvent.id) {
+      newEvent.id = Math.random().toString(36).substring(2, 9);
+    }
+
+    // Set default status if not provided
+    if (!newEvent.status) {
+      newEvent.status = "new";
+    }
+
+    // Add timestamp if not provided
+    if (!newEvent.timestamp) {
+      newEvent.timestamp = new Date().toISOString();
+    }
+
+    // Add the new event to the beginning of the array
+    events.unshift(newEvent);
+
+    // Update the remote storage
+    await updateEvents();
+
+    // Reset to first page when adding new events
+    currentPage = 1;
+
+    // Update UI
+    updateStats();
+    filterAndRenderEvents();
+
+    showNotification("New event added successfully");
+    return true;
+  } catch (error) {
+    console.error("Error adding new event:", error);
+    showNotification("Error adding new event", "error");
+    return false;
+  }
 }
 
-// Filter and render events
+// Stats
+function updateStats() {
+  totalEventsElement.textContent = events.length;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayEvents = events.filter((event) => new Date(event.timestamp) >= today);
+  todayEventsElement.textContent = todayEvents.length;
+}
+
+// Filtering with pagination support
 function filterAndRenderEvents() {
-  let filteredEvents = events.filter((event) => currentFilter === "all" || event.status === currentFilter)
+  let filteredEvents = events.filter((event) => currentFilter === "all" || event.status === currentFilter);
+
   if (searchQuery) {
-    const query = searchQuery.toLowerCase()
+    const query = searchQuery.toLowerCase();
     filteredEvents = filteredEvents.filter(
       (event) =>
         event.cameraName.toLowerCase().includes(query) ||
         new Date(event.timestamp).toLocaleString().toLowerCase().includes(query),
-    )
+    );
   }
-  renderEvents(filteredEvents)
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredEvents.length / EVENTS_PER_PAGE);
+  if (currentPage > totalPages && totalPages > 0) {
+    currentPage = totalPages; // Adjust current page if it's out of bounds
+  }
+
+  const startIdx = (currentPage - 1) * EVENTS_PER_PAGE;
+  const paginatedEvents = filteredEvents.slice(startIdx, startIdx + EVENTS_PER_PAGE);
+
+  renderEvents(paginatedEvents);
+  updatePaginationControls(filteredEvents.length);
 }
 
-// Render events
+// Update pagination controls
+function updatePaginationControls(totalFilteredEvents) {
+  const totalPages = Math.ceil(totalFilteredEvents / EVENTS_PER_PAGE);
+  const paginationContainer = document.getElementById("pagination-container");
+
+  if (totalPages <= 1) {
+    paginationContainer.innerHTML = "";
+    return;
+  }
+
+  paginationContainer.innerHTML = `
+    <div class="pagination">
+      <button class="page-btn" id="prev-page" ${currentPage === 1 ? "disabled" : ""}>
+        Previous
+      </button>
+      <span class="page-info">
+        Page ${currentPage} of ${totalPages}
+      </span>
+      <button class="page-btn" id="next-page" 
+        ${currentPage >= totalPages ? "disabled" : ""}>
+        Next
+      </button>
+    </div>
+  `;
+}
+
+// Rendering
 function renderEvents(eventsToRender) {
-  eventsGrid.innerHTML = ""
+  eventsGrid.innerHTML = "";
 
   if (eventsToRender.length === 0) {
-    emptyState.style.display = "flex"
-    return
+    emptyState.style.display = "flex";
+    return;
   }
 
-  emptyState.style.display = "none"
+  emptyState.style.display = "none";
 
   eventsToRender.forEach((event) => {
-    // Make sure event has all required properties with fallbacks
-    const eventId = event.id || Math.random().toString(36).substring(2, 9)
-    const cameraName = event.cameraName || "Unknown Camera"
-    const timestamp = event.timestamp ? new Date(event.timestamp).toLocaleString() : "Unknown Time"
-    const imageUrl = event.imageUrl || "/placeholder.svg"
-    const status = event.status || "new"
+    const eventId = event.id || Math.random().toString(36).substring(2, 9);
+    const cameraName = event.cameraName || "Unknown Camera";
+    const timestamp = event.timestamp ? new Date(event.timestamp).toLocaleString() : "Unknown Time";
+    const imageUrl = event.imageUrl || "/placeholder.svg";
+    const status = event.status || "new";
 
-    const card = document.createElement("div")
-    card.className = "event-card"
-    card.dataset.id = eventId
+    const card = document.createElement("div");
+    card.className = "event-card";
+    card.dataset.id = eventId;
 
     card.innerHTML = `
-    <div class="event-image-container">
-        <img src="${imageUrl}" class="event-image" alt="Event from ${cameraName}">
-        ${
-          event.location && event.location.coordinates
-            ? '<div class="location-indicator"><span class="location-dot"></span>Location detected</div>'
-            : ""
-        }
-        <div class="event-actions">
-            <button class="event-action escalate-btn" title="Escalate Event">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m19 14-7-7-7 7"/>
-                </svg>
-            </button>
-            <button class="event-action delete-btn" title="Delete Event">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
-    </div>
-    <div class="event-info">
-        <div class="event-camera">${cameraName}</div>
-        <div class="event-timestamp">${timestamp}</div>
-    </div>
-`
+      <div class="event-image-container">
+          <img src="${imageUrl}" class="event-image" alt="Event from ${cameraName}">
+          ${
+            event.location && event.location.coordinates
+              ? '<div class="location-indicator"><span class="location-dot"></span>Location detected</div>'
+              : ""
+          }
+          <div class="event-actions">
+              <button class="event-action escalate-btn" title="Escalate Event">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m19 14-7-7-7 7"/>
+                  </svg>
+              </button>
+              <button class="event-action delete-btn" title="Delete Event">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+              </button>
+          </div>
+      </div>
+      <div class="event-info">
+          <div class="event-camera">${cameraName}</div>
+          <div class="event-timestamp">${timestamp}</div>
+      </div>
+    `;
 
-    eventsGrid.appendChild(card)
+    eventsGrid.appendChild(card);
 
-    // Add event listeners to the newly created card
-    const escalateBtn = card.querySelector(".escalate-btn")
-    const deleteBtn = card.querySelector(".delete-btn")
+    // Card button events
+    const escalateBtn = card.querySelector(".escalate-btn");
+    const deleteBtn = card.querySelector(".delete-btn");
 
-    // Open modal when clicking on the card (except action buttons)
     card.addEventListener("click", (e) => {
-      // Don't open modal if clicking on action buttons
       if (!e.target.closest(".event-action")) {
-        openEventModal(event)
+        openEventModal(event);
       }
-    })
+    });
 
-    // Escalate event
     escalateBtn.addEventListener("click", (e) => {
-      e.stopPropagation()
-      escalateEvent(eventId)
-    })
+      e.stopPropagation();
+      escalateEvent(eventId);
+    });
 
-    // Delete event
     deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation()
-      deleteEventById(eventId)
-    })
-  })
+      e.stopPropagation();
+      deleteEventById(eventId);
+    });
+  });
 }
 
-// Update the openEventModal function to handle the location data better
+// Event modal
 function openEventModal(event) {
-  // Set current event ID
-  currentEventId = event.id
+  currentEventId = event.id;
+  modalImage.src = event.imageUrl || "/placeholder.svg";
+  modalCamera.textContent = event.cameraName || "Unknown Camera";
+  modalTimestamp.textContent = event.timestamp ? new Date(event.timestamp).toLocaleString() : "Unknown Time";
 
-  // Populate modal with event data
-  modalImage.src = event.imageUrl || "/placeholder.svg"
-  modalCamera.textContent = event.cameraName || "Unknown Camera"
-  modalTimestamp.textContent = event.timestamp ? new Date(event.timestamp).toLocaleString() : "Unknown Time"
+  document.querySelector(".status-container").style.display = "none";
 
-  // Hide status as it's not in the screenshot
-  document.querySelector(".status-container").style.display = "none"
-
-  // Add location details if available
   if (event.location && event.location.placeName) {
-    modalLocation.textContent = event.location.placeName
-    document.querySelector(".location-container").style.display = ""
-    document.querySelector(".divider").style.display = ""
+    modalLocation.textContent = event.location.placeName;
+    document.querySelector(".location-container").style.display = "";
+    document.querySelector(".divider").style.display = "";
   } else if (event.location && event.location.coordinates) {
-    modalLocation.textContent = `${event.location.coordinates.lat.toFixed(4)}, ${event.location.coordinates.lng.toFixed(4)}`
-    document.querySelector(".location-container").style.display = ""
-    document.querySelector(".divider").style.display = ""
+    modalLocation.textContent = `${event.location.coordinates.lat.toFixed(4)}, ${event.location.coordinates.lng.toFixed(4)}`;
+    document.querySelector(".location-container").style.display = "";
+    document.querySelector(".divider").style.display = "";
   } else {
-    // If no location data, hide the location container and divider
-    document.querySelector(".location-container").style.display = "none"
-    document.querySelector(".divider").style.display = "none"
+    document.querySelector(".location-container").style.display = "none";
+    document.querySelector(".divider").style.display = "none";
   }
 
-  // Show modal
-  eventModal.classList.add("show")
-  document.body.style.overflow = "hidden"
+  eventModal.classList.add("show");
+  document.body.style.overflow = "hidden";
 }
 
-// Update closeEventModal to reset visibility
 function closeEventModal() {
-  eventModal.classList.remove("show")
-  document.body.style.overflow = "" // Restore scrolling
-  currentEventId = null
+  eventModal.classList.remove("show");
+  document.body.style.overflow = "";
+  currentEventId = null;
 
-  // Reset visibility of containers for next time
-  document.querySelector(".status-container").style.display = "none"
-  document.querySelector(".location-container").style.display = ""
-  document.querySelector(".divider").style.display = ""
+  document.querySelector(".status-container").style.display = "none";
+  document.querySelector(".location-container").style.display = "";
+  document.querySelector(".divider").style.display = "";
 }
 
-// Escalate an event (mark as reviewed)
+// Escalate & Delete
 async function escalateEvent(eventId) {
   try {
-    const eventIndex = events.findIndex((e) => e.id === eventId)
-    if (eventIndex === -1) return
-
-    events[eventIndex].status = "reviewed"
-
-    await updateEvents()
-    showNotification(`Event escalated successfully`)
-    filterAndRenderEvents()
-
-    // Update modal if it's open and showing this event
-    if (currentEventId === eventId) {
-      modalStatus.textContent = "reviewed"
-    }
+    const eventIndex = events.findIndex((e) => e.id === eventId);
+    if (eventIndex === -1) return;
+    events[eventIndex].status = "reviewed";
+    await updateEvents();
+    showNotification(`Event escalated successfully`);
+    filterAndRenderEvents();
+    if (currentEventId === eventId) modalStatus.textContent = "reviewed";
   } catch (error) {
-    console.error("Error escalating event:", error)
-    showNotification("Error escalating event", "error")
+    console.error("Error escalating event:", error);
+    showNotification("Error escalating event", "error");
   }
 }
 
-// Delete an event
 async function deleteEventById(eventId) {
   try {
-    const eventIndex = events.findIndex((e) => e.id === eventId)
-    if (eventIndex === -1) return
-
-    const eventName = events[eventIndex].cameraName || "Unknown"
-    events.splice(eventIndex, 1)
-
-    await updateEvents()
-    showNotification(`Event from ${eventName} deleted`)
-
-    // Close modal if it's open and showing this event
-    if (currentEventId === eventId) {
-      closeEventModal()
-    }
-
-    filterAndRenderEvents()
-    updateStats()
+    const eventIndex = events.findIndex((e) => e.id === eventId);
+    if (eventIndex === -1) return;
+    const eventName = events[eventIndex].cameraName || "Unknown";
+    events.splice(eventIndex, 1);
+    await updateEvents();
+    showNotification(`Event from ${eventName} deleted`);
+    if (currentEventId === eventId) closeEventModal();
+    filterAndRenderEvents();
+    updateStats();
   } catch (error) {
-    console.error("Error deleting event:", error)
-    showNotification("Error deleting event", "error")
+    console.error("Error deleting event:", error);
+    showNotification("Error deleting event", "error");
   }
 }
 
-// Update events in JSONBin
+// Update events in bin
 async function updateEvents() {
-  try {
-    const response = await fetch(`${API_URL}/${BIN_ID}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": API_KEY,
-      },
-      body: JSON.stringify({ events }),
-    })
-
-    if (!response.ok) throw new Error("Failed to update data")
-
-    return await response.json()
-  } catch (error) {
-    console.error("Error updating events:", error)
-    throw error
-  }
+  const response = await fetch(`${API_URL}/${BIN_ID}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Master-Key": API_KEY,
+    },
+    body: JSON.stringify({ events }),
+  });
+  if (!response.ok) throw new Error("Failed to update events");
+  return await response.json();
 }
 
-// Show notification
+// UI helpers
 function showNotification(message, type = "success", duration = 3000) {
-  notificationText.textContent = message
-  notification.className = `notification ${type} show`
-  setTimeout(() => notification.classList.remove("show"), duration)
+  notificationText.textContent = message;
+  notification.className = `notification ${type} show`;
+  setTimeout(() => notification.classList.remove("show"), duration);
 }
 
-// Set connection status
 function setConnectionStatus(connected, message = "") {
-  connectionStatus.textContent = connected ? "Connected" : message || "Disconnected"
-  statusDot.classList.toggle("disconnected", !connected)
+  connectionStatus.textContent = connected ? "Connected" : message || "Disconnected";
+  statusDot.classList.toggle("disconnected", !connected);
 }
 
-// Show/hide loading indicator
 function showLoading(show) {
-  loadingIndicator.style.display = show ? "flex" : "none"
+  loadingIndicator.style.display = show ? "flex" : "none";
 }
 
-// Update setupEventListeners function to include filter buttons
+// Map functionality
+function showMapModal() {
+  mapModal.classList.add("show");
+  document.body.style.overflow = "hidden";
+  
+  // Initialize map if not already done
+  if (!worldMap) {
+    initWorldMap();
+  }
+  
+  renderEventMarkers();
+}
+
+function closeMapModal() {
+  mapModal.classList.remove("show");
+  document.body.style.overflow = "";
+}
+
+function initWorldMap() {
+  // Create map centered on world view
+  worldMap = L.map('world-map').setView([20, 0], 2);
+  
+  // Add tile layer (OpenStreetMap)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18,
+  }).addTo(worldMap);
+}
+
+function renderEventMarkers() {
+  // Clear existing markers
+  if (worldMap) {
+    worldMap.eachLayer(layer => {
+      if (layer instanceof L.Marker) {
+        worldMap.removeLayer(layer);
+      }
+    });
+  }
+
+  // Group events by location to cluster nearby events
+  const locationGroups = {};
+
+  events.forEach((event) => {
+    if (event.location && event.location.coordinates) {
+      const key = `${event.location.coordinates.lat.toFixed(2)}_${event.location.coordinates.lng.toFixed(2)}`;
+      if (!locationGroups[key]) {
+        locationGroups[key] = {
+          count: 0,
+          lat: event.location.coordinates.lat,
+          lng: event.location.coordinates.lng,
+          events: [],
+        };
+      }
+      locationGroups[key].count++;
+      locationGroups[key].events.push(event);
+    }
+  });
+
+  // Create markers for each location group
+  Object.values(locationGroups).forEach((group) => {
+    const marker = L.marker([group.lat, group.lng], {
+      icon: L.divIcon({
+        className: 'event-marker',
+        html: `<div class="marker-pin"></div><div class="marker-count">${group.count}</div>`,
+        iconSize: [30, 42],
+        iconAnchor: [15, 42],
+        popupAnchor: [0, -36]
+      })
+    }).addTo(worldMap);
+
+    // Add popup with event information
+    const popupContent = `
+      <div class="map-popup">
+        <strong>${group.count} event${group.count > 1 ? 's' : ''}</strong><br>
+        ${group.lat.toFixed(4)}, ${group.lng.toFixed(4)}<br>
+      </div>
+    `;
+    
+    marker.bindPopup(popupContent);
+    
+    // Fit map to show all markers
+    if (Object.keys(locationGroups).length > 1) {
+      const bounds = L.latLngBounds(Object.values(locationGroups).map(group => [group.lat, group.lng]));
+      worldMap.fitBounds(bounds, { padding: [50, 50] });
+    } else if (Object.keys(locationGroups).length === 1) {
+      worldMap.setView([group.lat, group.lng], 8);
+    }
+  });
+}
+
+// Event listeners
 function setupEventListeners() {
-  // Search functionality
   searchButton.addEventListener("click", () => {
-    searchQuery = searchInput.value.trim()
-    filterAndRenderEvents()
-  })
+    searchQuery = searchInput.value.trim();
+    currentPage = 1; // Reset to first page when searching
+    filterAndRenderEvents();
+  });
 
   searchInput.addEventListener("keyup", (e) => {
     if (e.key === "Enter") {
-      searchQuery = searchInput.value.trim()
-      filterAndRenderEvents()
+      searchQuery = searchInput.value.trim();
+      currentPage = 1; // Reset to first page when searching
+      filterAndRenderEvents();
     }
-  })
+  });
 
-  // Filter buttons
   filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      filterButtons.forEach((btn) => btn.classList.remove("active"))
-      button.classList.add("active")
-      currentFilter = button.dataset.filter
-      filterAndRenderEvents()
-    })
-  })
+      filterButtons.forEach((btn) => btn.classList.remove("active"));
+      button.classList.add("active");
+      currentFilter = button.dataset.filter;
+      currentPage = 1; // Reset to first page when changing filters
+      filterAndRenderEvents();
+    });
+  });
 
-  // Modal event listeners
-  closeModal.addEventListener("click", closeEventModal)
+  closeModal.addEventListener("click", closeEventModal);
 
-  // Close modal when clicking outside of it
   eventModal.addEventListener("click", (e) => {
     if (e.target === eventModal) {
-      closeEventModal()
+      closeEventModal();
     }
-  })
+  });
 
-  // Close modal with Escape key
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && eventModal.classList.contains("show")) {
-      closeEventModal()
+      closeEventModal();
     }
-  })
+    if (e.key === "Escape" && mapModal.classList.contains("show")) {
+      closeMapModal();
+    }
+  });
 
-  // Mark as reviewed button in modal
   markReviewed.addEventListener("click", () => {
-    if (currentEventId) {
-      escalateEvent(currentEventId)
-    }
-  })
+    if (currentEventId) escalateEvent(currentEventId);
+  });
 
-  // Delete event button in modal
   deleteEvent.addEventListener("click", () => {
-    if (currentEventId) {
-      deleteEventById(currentEventId)
+    if (currentEventId) deleteEventById(currentEventId);
+  });
+
+  // Map related event listeners
+  showMapButton.addEventListener("click", showMapModal);
+  closeMapButton.addEventListener("click", closeMapModal);
+  mapModal.addEventListener("click", (e) => {
+    if (e.target === mapModal) {
+      closeMapModal();
     }
-  })
+  });
+
+  // Pagination event delegation
+  document.addEventListener("click", (e) => {
+    if (e.target.id === "prev-page") {
+      currentPage--;
+      filterAndRenderEvents();
+    } else if (e.target.id === "next-page") {
+      currentPage++;
+      filterAndRenderEvents();
+    }
+  });
 }
 
-// Add a function to handle window resize events for better mobile experience
+// Responsive UI setup
 function handleResize() {
-  // Adjust container heights based on window size
-  const windowHeight = window.innerHeight
-  const headerHeight = document.querySelector(".dashboard-header").offsetHeight
-  const filtersHeight = document.querySelector(".filters").offsetHeight
-
-  // Calculate available height for events container
-  const availableHeight = windowHeight - headerHeight - filtersHeight - 60 // 60px for padding
-
-  // Set minimum height for events container
-  document.querySelector(".events-container").style.minHeight = Math.max(300, availableHeight) + "px"
+  const windowHeight = window.innerHeight;
+  const headerHeight = document.querySelector(".dashboard-header").offsetHeight;
+  const filtersHeight = document.querySelector(".filters").offsetHeight;
+  const availableHeight = windowHeight - headerHeight - filtersHeight - 60;
+  document.querySelector(".events-container").style.minHeight = Math.max(300, availableHeight) + "px";
 }
 
-// Add resize event listener to window
-window.addEventListener("resize", handleResize)
-
-// Call handleResize on init to set initial sizes
+window.addEventListener("resize", handleResize);
 window.addEventListener("DOMContentLoaded", () => {
-  init()
-  // Set timeout to ensure DOM is fully loaded
-  setTimeout(handleResize, 100)
-})
+  init();
+  setTimeout(handleResize, 100);
+});
+
+// Make addNewEvent available globally for testing
+window.addNewEvent = addNewEvent;
